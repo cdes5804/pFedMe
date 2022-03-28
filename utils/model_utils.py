@@ -8,6 +8,7 @@ import torchvision.transforms as transforms
 from tqdm import trange
 import numpy as np
 import random
+import ujson
 
 IMAGE_SIZE = 28
 IMAGE_PIXELS = IMAGE_SIZE * IMAGE_SIZE
@@ -240,54 +241,19 @@ def read_cifa_data():
 
     return train_data['users'], _ , train_data['user_data'], test_data['user_data']
 
-def read_data(dataset):
-    '''parses data in given train and test data directories
+def read_data(data_dir, idx):
+    train_data_dir = os.path.join(data_dir, 'train/')
+    test_data_dir = os.path.join(data_dir, 'test/')
 
-    assumes:
-    - the data in the input directories are .json files with 
-        keys 'users' and 'user_data'
-    - the set of train set users is the same as the set of test set users
+    train_file = train_data_dir + 'train' + str(idx) + '_' + '.json'
+    with open(train_file, 'r') as f:
+        train_data = ujson.load(f)
 
-    Return:
-        clients: list of client ids
-        groups: list of group ids; empty list if none found
-        train_data: dictionary of train data
-        test_data: dictionary of test data
-    '''
+    test_file = test_data_dir + 'test' + str(idx) + '_' + '.json'
+    with open(test_file, 'r') as f:
+        test_data = ujson.load(f)
 
-    if(dataset == "Cifar10"):
-        clients, groups, train_data, test_data = read_cifa_data()
-        return clients, groups, train_data, test_data
-
-    train_data_dir = os.path.join('data',dataset,'data', 'train')
-    test_data_dir = os.path.join('data',dataset,'data', 'test')
-    clients = []
-    groups = []
-    train_data = {}
-    test_data = {}
-
-    train_files = os.listdir(train_data_dir)
-    train_files = [f for f in train_files if f.endswith('.json')]
-    for f in train_files:
-        file_path = os.path.join(train_data_dir, f)
-        with open(file_path, 'r') as inf:
-            cdata = json.load(inf)
-        clients.extend(cdata['users'])
-        if 'hierarchies' in cdata:
-            groups.extend(cdata['hierarchies'])
-        train_data.update(cdata['user_data'])
-
-    test_files = os.listdir(test_data_dir)
-    test_files = [f for f in test_files if f.endswith('.json')]
-    for f in test_files:
-        file_path = os.path.join(test_data_dir, f)
-        with open(file_path, 'r') as inf:
-            cdata = json.load(inf)
-        test_data.update(cdata['user_data'])
-
-    clients = list(sorted(train_data.keys()))
-
-    return clients, groups, train_data, test_data
+    return train_data, test_data
 
 def read_user_data(index,data,dataset):
     id = data[0][index]
@@ -315,6 +281,17 @@ def read_user_data(index,data,dataset):
     train_data = [(x, y) for x, y in zip(X_train, y_train)]
     test_data = [(x, y) for x, y in zip(X_test, y_test)]
     return id, train_data, test_data
+
+def read_client_data(data_dir, idx):
+    train_data, test_data = read_data(data_dir, idx)
+    X_train = torch.Tensor(train_data['x']).type(torch.float32)
+    y_train = torch.Tensor(train_data['y']).type(torch.int64)
+    X_test = torch.Tensor(test_data['x']).type(torch.float32)
+    y_test = torch.Tensor(test_data['y']).type(torch.int64)
+
+    train_data = [(x, y) for x, y in zip(X_train, y_train)]
+    test_data = [(x, y) for x, y in zip(X_test, y_test)]
+    return train_data, test_data
 
 class Metrics(object):
     def __init__(self, clients, params):

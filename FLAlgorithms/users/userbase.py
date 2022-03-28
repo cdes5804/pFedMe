@@ -6,6 +6,7 @@ import json
 from torch.utils.data import DataLoader
 import numpy as np
 import copy
+import random
 
 class User:
     """
@@ -23,12 +24,19 @@ class User:
         self.beta = beta
         self.lamda = lamda
         self.local_epochs = local_epochs
-        self.trainloader = DataLoader(train_data, self.batch_size)
-        self.testloader =  DataLoader(test_data, self.batch_size)
-        self.testloaderfull = DataLoader(test_data, self.test_samples)
-        self.trainloaderfull = DataLoader(train_data, self.train_samples)
-        self.iter_trainloader = iter(self.trainloader)
-        self.iter_testloader = iter(self.testloader)
+        
+        if train_data is not None:
+            random.shuffle(train_data)
+            split_idx = int(0.2 * len(train_data))
+            validation_data = train_data[:split_idx]
+            train_data = train_data[split_idx:]
+            self.validationloader = DataLoader(validation_data, self.batch_size, shuffle=True)
+            self.trainloader = DataLoader(train_data, self.batch_size, drop_last=True)
+            self.iter_trainloader = iter(self.trainloader)
+            self.train_samples = len(train_data)
+        if test_data is not None:
+            self.testloaderfull = DataLoader(test_data, self.batch_size, drop_last=False)
+            self.test_samples = len(test_data)
 
         # those parameters are for persionalized federated learing.
         self.local_model = copy.deepcopy(list(self.model.parameters()))
@@ -67,17 +75,64 @@ class User:
                 grads.append(param.grad.data)
         return grads
 
-    def test(self):
+    def test_personalization(self):
         self.model.eval()
+        self.update_parameters(self.persionalized_model_bar)
         test_acc = 0
+        test_count = 0
         for x, y in self.testloaderfull:
             x, y = x.to(self.device), y.to(self.device)
             output = self.model(x)
             test_acc += (torch.sum(torch.argmax(output, dim=1) == y)).item()
+            test_count += y.shape[0]
             #@loss += self.loss(output, y)
             #print(self.id + ", Test Accuracy:", test_acc / y.shape[0] )
             #print(self.id + ", Test Loss:", loss)
-        return test_acc, y.shape[0]
+        return test_acc, test_count
+
+    def test(self):
+        self.model.eval()
+        test_acc = 0
+        test_count = 0
+        for x, y in self.testloaderfull:
+            x, y = x.to(self.device), y.to(self.device)
+            output = self.model(x)
+            test_acc += (torch.sum(torch.argmax(output, dim=1) == y)).item()
+            test_count += y.shape[0]
+            #@loss += self.loss(output, y)
+            #print(self.id + ", Test Accuracy:", test_acc / y.shape[0] )
+            #print(self.id + ", Test Loss:", loss)
+        return test_acc, test_count
+    
+    def validate(self):
+        test_acc = 0
+        test_count = 0
+        test_loss = 0
+        
+        self.model.train()
+        
+        for _ in range(2):
+            X, y = self.get_next_train_batch()
+            self.optimizer.zero_grad()
+            output = self.model(X)
+            loss = self.loss(output, y)
+            loss.backward()
+            self.optimizer.step()
+        
+        self.model.eval()
+        
+        for x, y in self.validationloader:
+            x, y = x.to(self.device), y.to(self.device)
+            output = self.model(x)
+            test_acc += (torch.sum(torch.argmax(output, dim=1) == y)).item()
+            test_count += y.shape[0]
+            test_loss += self.loss(output, y).item() * y.shape[0]
+            #@loss += self.loss(output, y)
+            #print(self.id + ", Test Accuracy:", test_acc / y.shape[0] )
+            #print(self.id + ", Test Loss:", loss)
+        self.update_parameters(self.local_model)
+        return test_acc, test_count, test_loss
+        
 
     def train_error_and_loss(self):
         self.model.eval()
@@ -95,16 +150,20 @@ class User:
     def test_persionalized_model(self):
         self.model.eval()
         test_acc = 0
+        test_count = 0
+        test_loss = 0
         self.update_parameters(self.persionalized_model_bar)
-        for x, y in self.testloaderfull:
+        for x, y in self.validationloader:
             x, y = x.to(self.device), y.to(self.device)
             output = self.model(x)
             test_acc += (torch.sum(torch.argmax(output, dim=1) == y)).item()
+            test_count += y.shape[0]
+            test_loss += self.loss(output, y).item() * y.shape[0]
             #@loss += self.loss(output, y)
             #print(self.id + ", Test Accuracy:", test_acc / y.shape[0] )
             #print(self.id + ", Test Loss:", loss)
         self.update_parameters(self.local_model)
-        return test_acc, y.shape[0]
+        return test_acc, test_count, test_loss
 
     def train_error_and_loss_persionalized_model(self):
         self.model.eval()
@@ -142,15 +201,11 @@ class User:
         return (X.to(self.device), y.to(self.device))
 
     def save_model(self):
-        model_path = os.path.join("models", self.dataset)
+        model_path = os.path.join("models", "Cifar10")
         if not os.path.exists(model_path):
             os.makedirs(model_path)
-        torch.save(self.model, os.path.join(model_path, "user_" + self.id + ".pt"))
+        torch.save(self.model, os.path.join(model_path, f"user_{self.id}.pt"))
 
     def load_model(self):
-        model_path = os.path.join("models", self.dataset)
-        self.model = torch.load(os.path.join(model_path, "server" + ".pt"))
-    
-    @staticmethod
-    def model_exists():
-        return os.path.exists(os.path.join("models", "server" + ".pt"))
+        model_path = os.path.join("models", "Cifar10")
+        self.model = torch.load(os.path.join(model_path, f"user_{self.id}.pt"))

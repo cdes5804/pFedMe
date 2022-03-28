@@ -69,10 +69,10 @@ class Server:
         model_path = os.path.join("models", self.dataset)
         if not os.path.exists(model_path):
             os.makedirs(model_path)
-        torch.save(self.model, os.path.join(model_path, "server" + ".pt"))
+        torch.save(self.model, os.path.join(model_path, f"server_{self.algorithm}" + ".pt"))
 
     def load_model(self):
-        model_path = os.path.join("models", self.dataset, "server" + ".pt")
+        model_path = os.path.join("models", self.dataset, f"server_{self.algorithm}" + ".pt")
         assert (os.path.exists(model_path))
         self.model = torch.load(model_path)
 

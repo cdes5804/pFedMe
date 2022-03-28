@@ -43,3 +43,14 @@ class UserAVG(User):
             self.clone_model_paramenter(self.model.parameters(), self.local_model)
         return LOSS
 
+    def finetune(self):
+        self.model.train()
+        
+        for _ in range(2):
+            X, y = self.get_next_train_batch()
+            self.optimizer.zero_grad()
+            output = self.model(X)
+            loss = self.loss(output, y)
+            loss.backward()
+            self.optimizer.step()
+

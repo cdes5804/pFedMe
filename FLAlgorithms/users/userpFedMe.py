@@ -47,6 +47,7 @@ class UserpFedMe(User):
                 output = self.model(X)
                 loss = self.loss(output, y)
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 10)
                 self.persionalized_model_bar, _ = self.optimizer.step(self.local_model)
 
             # update local weight after finding aproximate theta
